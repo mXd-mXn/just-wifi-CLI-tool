@@ -1,0 +1,105 @@
+#!/usr/bin/env zsh
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if ! command -v nmcli &> /dev/null; then
+    echo "${RED}Error:${NC} nmcli not found. Make sure NetworkManager installed."
+    exit 1
+fi
+
+show_help() {
+    echo "${BLUE}WiFi CLI${NC}"
+    echo ""
+    echo "Using: wifi <option> [argument]"
+    echo ""
+    echo "Options:"
+    echo "  scan                      Show available networks"
+    echo "  connect <SSID> [password] Connect to network"
+    echo "  status                    Current connection status"
+    echo "  on / off                  Enable / disable Wi-Fi"
+    echo "  saved                     Saved networks list"
+    echo "  forget <SSID>             Delete saved network"
+    echo "  help                      Show this help"
+}
+
+cmd_scan() {
+    echo "${YELLOW}Scanning...${NC}"
+    nmcli device wifi rescan 2>/dev/null
+    nmcli --fields IN-USE,SSID,BARS,SIGNAL,SECURITY device wifi list
+}
+
+cmd_connect() {
+    local ssid="$1"
+    local password="$2"
+
+    if [[ -z "$ssid" ]]; then
+        echo "${RED}Error:${NC} Enter wifi name (SSID)."
+        exit 1
+    fi
+
+    if [[ -z "$password" ]]; then
+        echo -n "${YELLOW}Password $ssid: ${NC}"
+        read -s password
+        echo ""
+    fi
+
+    echo "${BLUE}Connecting $ssid...${NC}"
+    if nmcli device wifi connect "$ssid" password "$password"; then
+        echo "${GREEN}Succes connected $ssid!${NC}"
+    else
+        echo "${RED}Error connect to $ssid.${NC}"
+    fi
+}
+
+cmd_status() {
+    local active_info=$(nmcli -t -f ACTIVE,SSID,SIGNAL,FREQ,DEVICE device wifi | grep '^yes')
+    if [[ -n "$active_info" ]]; then
+        local ssid=$(echo "$active_info" | cut -d':' -f2)
+        local signal=$(echo "$active_info" | cut -d':' -f3)
+        local freq=$(echo "$active_info" | cut -d':' -f4)
+        local ip=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+')
+
+        echo "${GREEN}Connected:${NC} $ssid"
+        echo "${BLUE}Signal:${NC} $signal%"
+        echo "${BLUE}Frequency:${NC} $freq"
+        echo "${BLUE}IP-adress:${NC} ${ip:-'немає'}"
+    else
+        echo "${RED}Wi-Fi not connected.${NC}"
+    fi
+}
+
+case "$1" in
+    scan)
+        cmd_scan
+        ;;
+    connect)
+        cmd_connect "$2" "$3"
+        ;;
+    status)
+        cmd_status
+        ;;
+    on)
+        nmcli radio wifi on && echo "${GREEN}Wi-Fi enabled${NC}"
+        ;;
+    off)
+        nmcli radio wifi off && echo "${RED}Wi-Fi disabled${NC}"
+        ;;
+    saved)
+        nmcli -f NAME,TYPE,DEVICE connection show | grep wifi
+        ;;
+    forget)
+        [[ -n "$2" ]] && nmcli connection delete "$2" || echo "${RED}Enter SSID${NC}"
+        ;;
+    help|--help|-h|"")
+        show_help
+        ;;
+    *)
+        echo "${RED}Unknown command: $1${NC}"
+        show_help
+        exit 1
+        ;;
+esac
